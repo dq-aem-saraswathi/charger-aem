@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workspaceFilter version="1.0">
+    <filter root="/apps/charger/clientlibs"/>
+    <filter root="/apps/charger/components"/>
+    <filter root="/apps/charger/i18n"/>
+    <filter root="/apps/msm/charger_blueprint" mode="merge"/>
+    <filter root="/apps/bulkusercreation"/>
+    <filter root="/apps/cq"/>
+</workspaceFilter>

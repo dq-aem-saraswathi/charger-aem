@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workspaceFilter version="1.0">
+    <filter root="/conf/charger" mode="replace"/>
+    <filter root="/content/charger" mode="merge"/>
+    <filter root="/content/dam/charger" mode="merge">
+        <exclude pattern="/content/dam/charger(/.*)?"/>
+        <include pattern="/content/dam/charger/jcr:content(/.*)?"/>
+    </filter>
+    <filter root="/content/dam/charger/asset.jpg" mode="merge"/>
+    <filter root="/content/experience-fragments/charger" mode="merge"/>
+</workspaceFilter>
