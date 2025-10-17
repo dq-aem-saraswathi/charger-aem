@@ -1,5 +1,7 @@
 package com.aem.charger.core.servlets;
 
+import com.adobe.cq.dam.cfm.ContentFragmentManager;
+import com.aem.charger.core.services.DynamicServiceGeneratorService;
 import com.aem.charger.core.services.ModelGeneratorService;
 import com.aem.charger.core.services.ReadContentFragment;
 import com.aem.charger.core.services.impl.ModelGeneratorServiceImpl;
@@ -17,6 +19,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.servlet.Servlet;
 import javax.servlet.ServletException;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Map;
 
@@ -33,6 +36,8 @@ public class ReadCfModelServlet extends SlingAllMethodsServlet{
     private ReadContentFragment readCFService;
     @Reference
     private ModelGeneratorService modelGeneratorService;
+    @Reference
+    private DynamicServiceGeneratorService dynamicServiceGeneratorService;
     private static final Logger log = LoggerFactory.getLogger(ReadCfModelServlet.class);
 
 @Override
@@ -50,11 +55,29 @@ public class ReadCfModelServlet extends SlingAllMethodsServlet{
     ResourceResolver resourceResolver=request.getResourceResolver();
         // Call the service to read CF model
     Map<String,String> fields= readCFService.readCFModel(modelPath,resourceResolver);
+    ContentFragmentManager cfManager = resourceResolver.adaptTo(ContentFragmentManager.class);
+    if(cfManager!=null)
+    log.info("cfManager :{}",cfManager);
 
+    log.info("cfManager......");
     //create model
     String dir="/Users/koratlasaraswathi/Documents/dq-projects/aembuilder/generated-projects/charger/core/src/main/java/com/aem/charger/core/models";
+    String ourputDir="/Users/koratlasaraswathi/Documents/dq-projects/aembuilder/generated-projects/charger/core/src/main/java/com/aem/charger/core/services/impl";
+    String serviceDir="/Users/koratlasaraswathi/Documents/dq-projects/aembuilder/generated-projects/charger/core/src/main/java/com/aem/charger/core/services";
     modelGeneratorService.generateModel("MyModel",fields,dir);
 
+    // Step 2: Generate service interface
+    FileWriter interfaceWriter = new FileWriter(serviceDir + "/MyService.java");
+    interfaceWriter.write(
+            "package com.aem.charger.core.services;\n" +
+                    "import java.util.List;\n" +
+                    "import com.aem.charger.core.models.MyModel;\n" +
+                    "public interface MyService {\n" +
+                    "    void createCFS(List<MyModel> users);\n" +
+                    "}"
+    );
+    interfaceWriter.close();
+    dynamicServiceGeneratorService.generateService("MyService","MyModel",fields,ourputDir);
         response.setContentType("text/plain");
         response.getWriter().write("CF model read successfully. Check logs for details.");
     }

@@ -1,6 +1,7 @@
 package com.aem.charger.core.services.impl;
 
 import com.adobe.cq.dam.cfm.ContentFragment;
+import com.adobe.cq.dam.cfm.ContentFragmentManager;
 import com.adobe.cq.dam.cfm.FragmentTemplate;
 import com.aem.charger.core.models.TunnelDetails;
 import com.aem.charger.core.services.UserCreationService;
@@ -51,6 +52,7 @@ public class UserCreationServiceImpl implements UserCreationService {
 			resourceResolver =
 					resourceResolverFactory.getServiceResourceResolver(serviceUserMap);
 
+log.info("hiiiiii");
 			//resourceResolver = resourceResolverFactory.getAdministrativeResourceResolver(null);
 
 			// Creating the session object by adapting ResourceResolver
@@ -66,7 +68,6 @@ public class UserCreationServiceImpl implements UserCreationService {
 		log.info("CFS creation starts !!");
 
 		try {
-			log.info("helloooooooooooooo");
 			Resource templateResource = resourceResolver
 					.getResource("/conf/charger/settings/dam/cfm/models/tunneldetails");
 			if (templateResource == null) {
