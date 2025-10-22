@@ -52,14 +52,17 @@ else{
             return "Error: " + e.getMessage();
         }
     }
+    @Override
+    public Set<String> getExcelColumns(InputStream inputStream) {
 
-    private Set<String> getExcelColumns(InputStream inputStream) {
         Set<String> columns = new LinkedHashSet<>();
         try (Workbook workbook = WorkbookFactory.create(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
             Row headerRow = sheet.getRow(0);
+
             if (headerRow != null) {
                 headerRow.forEach(cell -> columns.add(cell.getStringCellValue().trim()));
+
             }
         } catch (Exception e) {
             LOGGER.error("Error reading Excel file", e);
@@ -67,7 +70,7 @@ else{
         return columns;
     }
 
-    private Set<String> getModelFields(ResourceResolver resolver, String modelPath) {
+    public Set<String> getModelFields(ResourceResolver resolver, String modelPath) {
         Set<String> fields = new LinkedHashSet<>();
         Resource modelResource = resolver.getResource(modelPath + "/jcr:content/model/cq:dialog/content/items");
         ///conf/charger/settings/dam/cfm/models/mymodel/jcr:content/model/cq:dialog/content/items/1760336409855
