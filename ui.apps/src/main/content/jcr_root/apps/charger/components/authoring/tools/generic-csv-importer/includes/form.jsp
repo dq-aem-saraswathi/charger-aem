@@ -227,4 +227,67 @@ async function getCsrfToken() {
   return data.token;
 }
 
+
+async function handleUpdate() {
+  const form = document.getElementById("cfForm");
+
+  if (!form.checkValidity()) {
+    alert("Please fill all required fields before updating.");
+    return;
+  }
+
+
+
+  const formData = new FormData(form);
+  formData.append("mode", "update"); // you can remove mode entirely if servlet doesn’t need it
+
+  try {
+    const csrfToken = await getCsrfToken();
+    const url = Granite.HTTP.externalize("/bin/updateCFs");
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "CSRF-Token": csrfToken },
+      body: formData,
+      credentials: "same-origin"
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const result = await response.json();
+     const updatedFragments = Array.isArray(result.updatedFragments) ? result.updatedFragments : [];
+
+     let cf = "Updated CFs: ";
+     for (let i = 0; i < updatedFragments.length; i++) {
+       cf += updatedFragments[i] + " ";
+     }
+
+     const userConfirmed = confirm(
+       updatedFragments.length > 0
+         ? "Are you sure you want to update existing Content Fragments based on this Excel?\n\n" + cf
+         : "No Content Fragments to update."
+     );
+
+     if (!userConfirmed) {
+       alert("⚠️ Update cancelled by user.");
+       return;
+     }
+
+
+
+
+    console.log("Update result:", result);
+
+  } catch (err) {
+    console.error("Error updating CFs:", err);
+    alert("Failed to update CFs. Check console for details.");
+  }
+}
+
+document.getElementById("updateBtn").addEventListener("click", handleUpdate);
+
+
+
+
+
 </script>

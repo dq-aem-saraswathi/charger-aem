@@ -206,15 +206,6 @@ public class CreateGenericContentFragment extends SlingAllMethodsServlet {
                     }
                 }
 
-                // Optional: set custom property
-                String masterNodePath = parentPath + "/" + cfName + "/jcr:content/data/master";
-                Resource masterResource = resolver.getResource(masterNodePath);
-                if (masterResource != null) {
-                    Node cfNode = masterResource.adaptTo(Node.class);
-                    if (cfNode != null) {
-                        cfNode.setProperty("operatingMode", "defaultMode");
-                    }
-                }
             }
 
         } catch (ContentFragmentException e) {
