@@ -4,6 +4,7 @@ import com.adobe.cq.dam.cfm.ContentElement;
 import com.adobe.cq.dam.cfm.ContentFragment;
 import com.adobe.cq.dam.cfm.ContentFragmentException;
 import com.adobe.cq.dam.cfm.FragmentTemplate;
+import com.aem.charger.core.services.ExcelModelCompareService;
 import com.google.gson.Gson;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.*;
@@ -17,6 +18,7 @@ import org.apache.sling.api.servlets.SlingAllMethodsServlet;
 import org.apache.sling.api.servlets.ServletResolverConstants;
 import org.osgi.framework.Constants;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,20 +42,19 @@ import java.util.*;
 public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UpdateExistingContentFragments.class);
-
+    @Reference
+    private ExcelModelCompareService excelModelCompareService;
     @Override
     protected void doPost(SlingHttpServletRequest request, SlingHttpServletResponse response)
             throws IOException {
 
-
-        response.setCharacterEncoding("UTF-8");
-        response.setContentType("application/json;charset=UTF-8");
-
+        response.setContentType("application/json");
         LOGGER.info("====== 🧾 Starting Content Fragment Update Process ======");
 
         String parentPath = request.getParameter("parentPath");
         String titleColumn = request.getParameter("selectfield");
         String modelType = request.getParameter("modelType");
+        String modelPath = "/conf/charger/settings/dam/cfm/models/" + modelType;
 
         if (StringUtils.isBlank(parentPath) || StringUtils.isBlank(titleColumn)) {
             LOGGER.error("❌ Missing parentPath or titleColumn parameter");
@@ -93,7 +94,13 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
                         rowsData.add(rowData);
                     }
                 }
-
+                InputStream compareStream = filePart.getInputStream();
+                String compareResult = excelModelCompareService.compareExcelWithModel(resolver, compareStream, modelPath);
+                if (!"Matched".equals(compareResult)) {
+                    LOGGER.warn("Excel columns do not match the selected model: {}", modelType);
+                //    jsout.name("status").value("Model mismatched for uploaded file");
+                    return;
+                }
                 int titleIndex = headers.indexOf(titleColumn);
                 if (titleIndex == -1) {
                     LOGGER.warn("⚠️ Title column '{}' not found — using first column.", titleColumn);
@@ -135,7 +142,7 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
                         LOGGER.info("⚠️ CF not found — will create: {}", cfName);
                         createContentFragment(resolver, parentPath, headers, dataRow.toArray(new String[0]), modelType, cfName);
                         resolver.commit();
-                       // skippedCount++;
+                        // skippedCount++;
                         createdFragments.add(cfName);
                         continue;
                     }
@@ -283,3 +290,4 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
         }
     }
 }
+
