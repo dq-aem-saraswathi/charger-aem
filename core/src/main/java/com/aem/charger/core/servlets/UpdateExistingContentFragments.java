@@ -37,6 +37,7 @@ import java.util.*;
 public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UpdateExistingContentFragments.class);
+
     @Override
     protected void doPost(SlingHttpServletRequest request, SlingHttpServletResponse response)
             throws IOException {
@@ -46,7 +47,7 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
         LOGGER.info("====== 🧾 Starting Content Fragment Update Process ======");
 
         String parentPath = request.getParameter("parentPath");
-        String titleColumn = request.getParameter("selectfield"); // CF title column from user
+        String titleColumn = request.getParameter("selectfield");
         String modelType = request.getParameter("modelType");
 
         if (StringUtils.isBlank(parentPath) || StringUtils.isBlank(titleColumn)) {
@@ -57,14 +58,6 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
 
         ResourceResolver resolver = request.getResourceResolver();
 
-        String mode = request.getParameter("mode");
-        if ("update".equalsIgnoreCase(mode)) {
-            List<Map<String, Object>> fragments = getExistingContentFragments(resolver, parentPath);
-            //  response.getWriter().write(new Gson().toJson(fragments));
-            LOGGER.info("existing content fragments : {}", fragments);
-        }
-
-
         try {
             Part filePart = request.getPart("excel");
             if (filePart == null) {
@@ -73,140 +66,140 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
                 return;
             }
 
-        try (InputStream inputStream = filePart.getInputStream();
-             Workbook workbook = new XSSFWorkbook(inputStream)) {
+            try (InputStream inputStream = filePart.getInputStream();
+                 Workbook workbook = new XSSFWorkbook(inputStream)) {
 
-            Sheet sheet = workbook.getSheetAt(0);
-            LOGGER.info("📑 Sheet loaded: {} | Rows: {}", sheet.getSheetName(), sheet.getPhysicalNumberOfRows());
+                Sheet sheet = workbook.getSheetAt(0);
+                LOGGER.info("📑 Sheet loaded: {} | Rows: {}", sheet.getSheetName(), sheet.getPhysicalNumberOfRows());
 
-            List<String> headers = new ArrayList<>();
-            List<List<String>> rowsData = new ArrayList<>();
+                List<String> headers = new ArrayList<>();
+                List<List<String>> rowsData = new ArrayList<>();
 
-            for (Row row : sheet) {
-                List<String> rowData = new ArrayList<>();
-                for (Cell cell : row) {
-                    cell.setCellType(CellType.STRING);
-                    rowData.add(cell.getStringCellValue().trim());
-                }
-                if (row.getRowNum() == 0) {
-                    headers = rowData;
-                    LOGGER.info("🧠 Header Row: {}", headers);
-                } else {
-                    rowsData.add(rowData);
-                }
-            }
-
-            int titleIndex = headers.indexOf(titleColumn);
-            if (titleIndex == -1) {
-                LOGGER.warn("Selected title column '{}' not found. Using first column as fallback.", titleColumn);
-                titleIndex = 0;
-            }
-
-            int updatedCount = 0;
-            int skippedCount = 0;
-            List<String> updatedFragments = new ArrayList<>();
-            List<String> skippedFragments = new ArrayList<>();
-
-            LOGGER.info("📊 Starting update for {} content fragments", rowsData.size());
-
-            for (List<String> dataRow : rowsData) {
-                if (dataRow.isEmpty()) continue;
-
-                String cfTitleValue = dataRow.get(titleIndex);
-                if (StringUtils.isEmpty(cfTitleValue)) {
-                    cfTitleValue = "row_" + dataRow.hashCode();
-                }
-
-                String cfName = sanitizeForJcr(cfTitleValue);
-                String cfPath = parentPath + "/" + cfName;
-
-                LOGGER.info("------------------------------------------------------");
-                LOGGER.info("🔍 Checking CF: {} (Excel row {})", cfPath, dataRow);
-
-                Resource cfResource = resolver.getResource(cfPath);
-
-                if (cfResource == null) {
-                  //  LOGGER.warn("⚠️ CF does not exist at path: {}", cfPath);
-
-                    skippedFragments.add(cfName);
-
-                    createContentFragment(resolver, parentPath, headers, dataRow.toArray(new String[0]), modelType, cfName);
-                    resolver.commit();
-                    skippedCount++;
-                    continue;
-                }
-
-                ContentFragment cf = cfResource.adaptTo(ContentFragment.class);
-                Iterator<ContentElement> elements = cf.getElements();
-                if (cf == null) {
-                    LOGGER.warn("⚠️ Resource is not a valid CF: {}", cfPath);
-                    skippedFragments.add(cfName);
-                    skippedCount++;
-                    continue;
-                }
-
-                boolean updated = true;
-
-                while (elements.hasNext()) {
-                    ContentElement element = elements.next();
-                    String elementNormalized = element.getName().replaceAll("[ _]", "").toLowerCase();
-
-                    for (int i = 0; i < headers.size(); i++) {
-                        String headerNormalized = headers.get(i).replaceAll("[ _]", "").toLowerCase();
-                        if (i < dataRow.size() && elementNormalized.equals(headerNormalized)) {
-                            String oldValue = StringUtils.trimToEmpty(element.getContent());
-                            String newValue = dataRow.get(i).trim();
-                            if (!StringUtils.equalsIgnoreCase(oldValue, newValue)) {
-                                element.setContent(newValue, element.getContentType());
-                                updated = false;
-                                LOGGER.info("✅ Updated '{}' in CF '{}': '{}' -> '{}'", element.getName(), cfName, oldValue, newValue);
-                                LOGGER.info("boolean: {}",updated);
-                            }
-                            break;
-                        }
+                for (Row row : sheet) {
+                    List<String> rowData = new ArrayList<>();
+                    for (Cell cell : row) {
+                        cell.setCellType(CellType.STRING);
+                        rowData.add(cell.getStringCellValue().trim());
+                    }
+                    if (row.getRowNum() == 0) {
+                        headers = rowData;
+                        LOGGER.info("🧠 Header Row: {}", headers);
+                    } else {
+                        rowsData.add(rowData);
                     }
                 }
 
-                if (!updated) {
-                    updatedCount++;
-                    updatedFragments.add(cfName);
-                    resolver.commit();
-                    LOGGER.info("💾 Changes committed for CF '{}'", cfName);
-                } else {
-                    skippedCount++;
-                    skippedFragments.add(cfName);
-                    LOGGER.info("⏭️ No changes detected for CF '{}'", cfName);
+                int titleIndex = headers.indexOf(titleColumn);
+                if (titleIndex == -1) {
+                    LOGGER.warn("Selected title column '{}' not found. Using first column as fallback.", titleColumn);
+                    titleIndex = 0;
                 }
+
+                int updatedCount = 0;
+                int skippedCount = 0;
+                List<String> updatedFragments = new ArrayList<>();
+                List<String> skippedFragments = new ArrayList<>();
+
+                LOGGER.info("📊 Starting update for {} content fragments", rowsData.size());
+
+                for (List<String> dataRow : rowsData) {
+                    if (dataRow.isEmpty()) continue;
+
+                    String cfTitleValue = dataRow.get(titleIndex);
+
+                    // 🛠 FIX #1: Convert numeric-like values like "326.0" → "326"
+                    if (cfTitleValue.matches("\\d+(\\.0+)?")) {
+                        cfTitleValue = cfTitleValue.split("\\.")[0];
+                    }
+
+                    if (StringUtils.isEmpty(cfTitleValue)) {
+                        cfTitleValue = "row_" + dataRow.hashCode();
+                    }
+
+                    // 🛠 FIX #2: Sanitize for JCR-safe name (keeps numbers intact)
+                    String cfName = sanitizeForJcr(cfTitleValue);
+                    String cfPath = parentPath + "/" + cfName;
+
+                    LOGGER.info("------------------------------------------------------");
+                    LOGGER.info("🔍 Checking CF: {} (Excel row {})", cfPath, dataRow);
+
+                    Resource cfResource = resolver.getResource(cfPath);
+
+                    if (cfResource == null) {
+                        LOGGER.warn("⚠️ CF does not exist at path: {} — will create new one", cfPath);
+                        skippedFragments.add(cfName);
+
+                        createContentFragment(resolver, parentPath, headers, dataRow.toArray(new String[0]), modelType, cfName);
+                        resolver.commit();
+                        skippedCount++;
+                        continue;
+                    }
+
+                    ContentFragment cf = cfResource.adaptTo(ContentFragment.class);
+                    if (cf == null) {
+                        LOGGER.warn("⚠️ Resource is not a valid CF: {}", cfPath);
+                        skippedFragments.add(cfName);
+                        skippedCount++;
+                        continue;
+                    }
+
+                    boolean updated = false;
+
+                    Iterator<ContentElement> elements = cf.getElements();
+                    while (elements.hasNext()) {
+                        ContentElement element = elements.next();
+                        String elementNormalized = element.getName().replaceAll("[ _]", "").toLowerCase();
+
+                        for (int i = 0; i < headers.size(); i++) {
+                            String headerNormalized = headers.get(i).replaceAll("[ _]", "").toLowerCase();
+                            if (i < dataRow.size() && elementNormalized.equals(headerNormalized)) {
+                                String oldValue = StringUtils.trimToEmpty(element.getContent());
+                                String newValue = dataRow.get(i).trim();
+                                if (!StringUtils.equalsIgnoreCase(oldValue, newValue)) {
+                                    element.setContent(newValue, element.getContentType());
+                                    updated = true;
+                                    LOGGER.info("✅ Updated '{}' in CF '{}': '{}' -> '{}'", element.getName(), cfName, oldValue, newValue);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    if (updated) {
+                        updatedCount++;
+                        updatedFragments.add(cfName);
+                        resolver.commit();
+                        LOGGER.info("💾 Changes committed for CF '{}'", cfName);
+                    } else {
+                        skippedCount++;
+                        skippedFragments.add(cfName);
+                        LOGGER.info("⏭️ No changes detected for CF '{}'", cfName);
+                    }
+                }
+
+                Map<String, Object> result = new HashMap<>();
+                result.put("updatedCount", updatedCount);
+                result.put("skippedCount", skippedCount);
+                result.put("updatedFragments", updatedFragments);
+                result.put("skippedFragments", skippedFragments);
+
+                LOGGER.info("====== ✅ Update Summary ======");
+                LOGGER.info("Updated CFs: {} | Skipped CFs: {}", updatedCount, skippedCount);
+                LOGGER.info("================================");
+
+                response.getWriter().write(new Gson().toJson(result));
+
+            } catch (Exception e) {
+                LOGGER.error("❌ Error processing Excel for CF update", e);
+                response.getWriter().write("{\"error\":\"" + e.getMessage() + "\"}");
             }
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("updatedCount", updatedCount);
-            result.put("skippedCount", skippedCount);
-            result.put("updatedFragments", updatedFragments);
-            result.put("skippedFragments", skippedFragments);
-
-            LOGGER.info("====== ✅ Update Summary ======");
-            LOGGER.info("Updated CFs: {} | Skipped CFs: {}", updatedCount, skippedCount);
-            LOGGER.info("================================");
-
-            response.getWriter().write(new Gson().toJson(result));
-
         } catch (Exception e) {
-            LOGGER.error("❌ Error processing Excel for CF update", e);
-            response.getWriter().write("{\"error\":\"" + e.getMessage() + "\"}");
-        }
-    }
-        catch (Exception e){
             response.getWriter().write(new Gson().toJson(e.getMessage()));
         }
     }
 
-
-
-
-/**
-     * ✅ Utility method to fetch existing content fragments and their data
-     */
+    /** ✅ Fetch existing CFs for reference */
     private List<Map<String, Object>> getExistingContentFragments(ResourceResolver resolver, String parentPath) {
         List<Map<String, Object>> fragmentsData = new ArrayList<>();
 
@@ -238,12 +231,13 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
         return fragmentsData;
     }
 
-    /** Sanitize CF name for JCR path safety */
+    /** ✅ Sanitize CF name for JCR path safety */
     private String sanitizeForJcr(String name) {
         if (name == null) return "";
         return name.trim().toLowerCase().replaceAll("[^a-z0-9\\-]", "-");
     }
 
+    /** ✅ Create or update CF */
     public void createContentFragment(ResourceResolver resolver, String parentPath,
                                       List<String> headerList, String[] data, String modelType, String cfName) {
 
@@ -302,7 +296,4 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
             LOGGER.error("Unexpected error in createContentFragment", e);
         }
     }
-
-
 }
-

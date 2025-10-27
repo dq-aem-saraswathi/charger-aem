@@ -26,6 +26,7 @@ function createContentFragment() {
 		success: function(data) {
             console.log("Success");
 			$(".results").html(data.status);
+
              //This line clears the content of the element with the class "results" using jQuery. It's clearing any previous results before making a new request.
             // jsout.name("status").value("Success Created total of " + resourceList.size() + " Content Fragments");(this is java line written in java).name=status, 
             //through this it prints the 

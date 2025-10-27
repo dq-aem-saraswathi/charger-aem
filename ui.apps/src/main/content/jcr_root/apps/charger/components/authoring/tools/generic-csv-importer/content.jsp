@@ -25,7 +25,6 @@
 
     <cq:include script="includes/form.jsp"/>
 
-    <cq:include script="includes/results.jsp"/>
 </div>
 
 
