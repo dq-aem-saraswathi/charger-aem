@@ -53,6 +53,13 @@
 
   <!-- ✅ Inline Message Area -->
   <div id="messageContainer" class="message-container"></div>
+
+  <!-- Loading Spinner -->
+  <div id="spinnerOverlay" class="spinner-overlay" style="display:none;">
+    <div class="spinner"></div>
+    <p>Please wait, processing content fragments...</p>
+  </div>
+
 </form>
 
 <style>
@@ -132,6 +139,41 @@
     color: #665c00;
     border: 1px solid #ffecb3;
   }
+
+  /* 🔄 Spinner Overlay */
+  .spinner-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    font-weight: 500;
+    color: #333;
+    font-size: 1rem;
+  }
+
+  /* The actual spinner circle */
+  .spinner {
+    border: 6px solid #f3f3f3;
+    border-top: 6px solid #005a9c; /* Coral blue */
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
 </style>
 
 <script>
@@ -148,12 +190,6 @@ function showMessage(message, type = "info") {
   container.innerHTML = message;
   container.style.display = "block";
 
-  // Auto-hide after 6 seconds unless it's warning
-  if (type !== "warning") {
-    setTimeout(() => {
-      container.style.display = "none";
-    }, 6000);
-  }
 }
 
 // ✅ Inline confirmation message
@@ -267,6 +303,7 @@ async function handleExcelUpload() {
 }
 
 /* ---------- Form Submit (Create CF) ---------- */
+/* ---------- Form Submit (Create CF) ---------- */
 async function handleSubmit(event) {
   event.preventDefault();
   const form = document.getElementById("cfForm");
@@ -275,6 +312,8 @@ async function handleSubmit(event) {
     showMessage("⚠️ Please fill all required fields.", "warning");
     return;
   }
+
+  showSpinner(); // 🌀 Show spinner before starting the request
 
   try {
     const formData = new FormData(form);
@@ -300,14 +339,17 @@ async function handleSubmit(event) {
   } catch (err) {
     console.error("Error submitting form:", err);
     showMessage("❌ Failed to create Content Fragment. Check console for details.", "error");
+  } finally {
+    hideSpinner(); // ✅ Hide spinner after success or failure
   }
 }
+
 
 /* ---------- Update CF ---------- */
 async function handleUpdate() {
   const form = document.getElementById("cfForm");
   if (!form.checkValidity()) {
-    showMessage("⚠️ Please fill all required fields before updating.", "warning");
+    showMessage("Please fill all required fields before updating.", "warning");
     return;
   }
 
@@ -315,6 +357,8 @@ async function handleUpdate() {
   formData.append("mode", "update");
 
   try {
+    showSpinner(); // 🔄 Show spinner before fetch starts
+
     const csrfToken = await getCsrfToken();
     const url = Granite.HTTP.externalize("/bin/updateCFs");
 
@@ -329,46 +373,35 @@ async function handleUpdate() {
     const result = await response.json();
     console.log("Update result:", result);
 
-    const updatedFragments = Array.isArray(result.updatedFragments) ? result.updatedFragments : [];
-    let cfList = updatedFragments.join(", ");
+    const created = Array.isArray(result.createFragments) ? result.createFragments : [];
+    const updated = Array.isArray(result.updatedFragments) ? result.updatedFragments : [];
+    const skipped = Array.isArray(result.skippedFragments) ? result.skippedFragments : [];
 
-    if (updatedFragments.length === 0) {
-      showMessage("ℹ️ No Content Fragments to update.", "info");
-      return;
-    }
+    let summaryHtml = `<strong>Update Summary</strong><br><br>`;
+    summaryHtml += `<strong>Created content fragments:</strong><br>`;
+    summaryHtml += created.length ? created.join("<br>") + "<br><br>" : "None<br><br>";
+
+    summaryHtml += `<strong>Updated content fragments:</strong><br>`;
+    summaryHtml += updated.length ? updated.join("<br>") + "<br><br>" : "None<br><br>";
+
+    summaryHtml += `<strong>Skipped content fragments:</strong><br>`;
+    summaryHtml += skipped.length ? skipped.join("<br>") + "<br>" : "None<br>";
+
+    hideSpinner(); // ✅ Hide spinner when done
 
     showConfirmation(
-      `Are you sure you want to update existing Content Fragments based on this Excel?<br><strong>${cfList}</strong>`,
-      () => {
-        console.log("User confirmed update");
-        showMessage("Updating Content Fragments...", "info");
-        const updatedFragments = Array.isArray(result.updatedFragments) ? result.updatedFragments : [];
-
-        if (updatedFragments.length === 0) {
-            showMessage("ℹ️ No Content Fragments to update.", "info");
-            return;
-        }
-
-        // Method 1: Join with bullets
-        let cfList = "• " + updatedFragments.join("<br>• ");
-        console.log("cfList:", cfList);
-         showMessage(cfList,"info");
-        // Method 2: Join with commas
-        // let cfList = updatedFragments.join(", ");
-         console.log("cfList:", cfList);
-
-      },
-      () => {
-        console.log("User cancelled update");
-        showMessage("⚠️ Update cancelled by user.", "warning");
-      }
+      "Are you sure you want to update or create Content Fragments based on this Excel?",
+      () => showMessage(summaryHtml, "success"),
+      () => showMessage("Update cancelled by user.", "warning")
     );
 
   } catch (err) {
     console.error("Error updating CFs:", err);
-    showMessage("❌ Failed to update CFs. Check console for details.", "error");
+    hideSpinner(); // ❌ Always hide on error
+    showMessage("Failed to update CFs. Check console for details.", "error");
   }
 }
+
 
 document.getElementById("updateBtn").addEventListener("click", handleUpdate);
 
@@ -380,4 +413,13 @@ async function getCsrfToken() {
   const data = await res.json();
   return data.token;
 }
+/* ---------- Spinner Helpers ---------- */
+function showSpinner() {
+  document.getElementById("spinnerOverlay").style.display = "flex";
+}
+
+function hideSpinner() {
+  document.getElementById("spinnerOverlay").style.display = "none";
+}
+
 </script>

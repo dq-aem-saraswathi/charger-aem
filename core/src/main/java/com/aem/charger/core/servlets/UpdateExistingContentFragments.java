@@ -24,6 +24,9 @@ import javax.servlet.Servlet;
 import javax.servlet.http.Part;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 import java.util.*;
 
 @Component(
@@ -42,7 +45,9 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
     protected void doPost(SlingHttpServletRequest request, SlingHttpServletResponse response)
             throws IOException {
 
-        response.setContentType("application/json");
+
+        response.setCharacterEncoding("UTF-8");
+        response.setContentType("application/json;charset=UTF-8");
 
         LOGGER.info("====== 🧾 Starting Content Fragment Update Process ======");
 
@@ -70,7 +75,7 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
                  Workbook workbook = new XSSFWorkbook(inputStream)) {
 
                 Sheet sheet = workbook.getSheetAt(0);
-                LOGGER.info("📑 Sheet loaded: {} | Rows: {}", sheet.getSheetName(), sheet.getPhysicalNumberOfRows());
+                LOGGER.info("📑 Loaded sheet: {} | Rows: {}", sheet.getSheetName(), sheet.getPhysicalNumberOfRows());
 
                 List<String> headers = new ArrayList<>();
                 List<List<String>> rowsData = new ArrayList<>();
@@ -91,55 +96,55 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
 
                 int titleIndex = headers.indexOf(titleColumn);
                 if (titleIndex == -1) {
-                    LOGGER.warn("Selected title column '{}' not found. Using first column as fallback.", titleColumn);
+                    LOGGER.warn("⚠️ Title column '{}' not found — using first column.", titleColumn);
                     titleIndex = 0;
                 }
 
-                int updatedCount = 0;
-                int skippedCount = 0;
+                int updatedCount = 0, skippedCount = 0;
                 List<String> updatedFragments = new ArrayList<>();
                 List<String> skippedFragments = new ArrayList<>();
-
-                LOGGER.info("📊 Starting update for {} content fragments", rowsData.size());
-
+                List<String> createdFragments = new ArrayList<>();
                 for (List<String> dataRow : rowsData) {
                     if (dataRow.isEmpty()) continue;
 
-                    String cfTitleValue = dataRow.get(titleIndex);
+                    String cfTitleValue = safeCellValue(dataRow.get(titleIndex));
 
-                    // 🛠 FIX #1: Convert numeric-like values like "326.0" → "326"
+                    // Convert numeric-like "326.0" → "326"
                     if (cfTitleValue.matches("\\d+(\\.0+)?")) {
                         cfTitleValue = cfTitleValue.split("\\.")[0];
+                    }
+
+                    // Handle date-like titles gracefully
+                    if (looksLikeDate(cfTitleValue)) {
+                        cfTitleValue = formatDateForName(cfTitleValue);
                     }
 
                     if (StringUtils.isEmpty(cfTitleValue)) {
                         cfTitleValue = "row_" + dataRow.hashCode();
                     }
 
-                    // 🛠 FIX #2: Sanitize for JCR-safe name (keeps numbers intact)
                     String cfName = sanitizeForJcr(cfTitleValue);
                     String cfPath = parentPath + "/" + cfName;
 
                     LOGGER.info("------------------------------------------------------");
-                    LOGGER.info("🔍 Checking CF: {} (Excel row {})", cfPath, dataRow);
+                    LOGGER.info("🔍 Checking CF: {}", cfPath);
 
                     Resource cfResource = resolver.getResource(cfPath);
 
                     if (cfResource == null) {
-                        LOGGER.warn("⚠️ CF does not exist at path: {} — will create new one", cfPath);
-                        skippedFragments.add(cfName);
-
+                        LOGGER.info("⚠️ CF not found — will create: {}", cfName);
                         createContentFragment(resolver, parentPath, headers, dataRow.toArray(new String[0]), modelType, cfName);
                         resolver.commit();
-                        skippedCount++;
+                       // skippedCount++;
+                        createdFragments.add(cfName);
                         continue;
                     }
 
                     ContentFragment cf = cfResource.adaptTo(ContentFragment.class);
                     if (cf == null) {
-                        LOGGER.warn("⚠️ Resource is not a valid CF: {}", cfPath);
-                        skippedFragments.add(cfName);
+                        LOGGER.warn("⚠️ Not a valid CF resource: {}", cfPath);
                         skippedCount++;
+                        skippedFragments.add(cfName);
                         continue;
                     }
 
@@ -154,11 +159,12 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
                             String headerNormalized = headers.get(i).replaceAll("[ _]", "").toLowerCase();
                             if (i < dataRow.size() && elementNormalized.equals(headerNormalized)) {
                                 String oldValue = StringUtils.trimToEmpty(element.getContent());
-                                String newValue = dataRow.get(i).trim();
+                                String newValue = safeCellValue(dataRow.get(i));
+
                                 if (!StringUtils.equalsIgnoreCase(oldValue, newValue)) {
                                     element.setContent(newValue, element.getContentType());
                                     updated = true;
-                                    LOGGER.info("✅ Updated '{}' in CF '{}': '{}' -> '{}'", element.getName(), cfName, oldValue, newValue);
+                                    LOGGER.info("✅ Updated '{}' → '{}'", element.getName(), newValue);
                                 }
                                 break;
                             }
@@ -166,14 +172,14 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
                     }
 
                     if (updated) {
+                        resolver.commit();
                         updatedCount++;
                         updatedFragments.add(cfName);
-                        resolver.commit();
-                        LOGGER.info("💾 Changes committed for CF '{}'", cfName);
+                        LOGGER.info("💾 Changes committed for {}", cfName);
                     } else {
                         skippedCount++;
                         skippedFragments.add(cfName);
-                        LOGGER.info("⏭️ No changes detected for CF '{}'", cfName);
+                        LOGGER.info("⏭️ No changes for {}", cfName);
                     }
                 }
 
@@ -182,15 +188,13 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
                 result.put("skippedCount", skippedCount);
                 result.put("updatedFragments", updatedFragments);
                 result.put("skippedFragments", skippedFragments);
-
+                result.put("createFragments",createdFragments);
                 LOGGER.info("====== ✅ Update Summary ======");
-                LOGGER.info("Updated CFs: {} | Skipped CFs: {}", updatedCount, skippedCount);
-                LOGGER.info("================================");
-
+                LOGGER.info("Updated: {} | Skipped: {}", updatedCount, skippedCount);
                 response.getWriter().write(new Gson().toJson(result));
 
             } catch (Exception e) {
-                LOGGER.error("❌ Error processing Excel for CF update", e);
+                LOGGER.error("❌ Error updating CFs", e);
                 response.getWriter().write("{\"error\":\"" + e.getMessage() + "\"}");
             }
 
@@ -199,78 +203,63 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
         }
     }
 
-    /** ✅ Fetch existing CFs for reference */
-    private List<Map<String, Object>> getExistingContentFragments(ResourceResolver resolver, String parentPath) {
-        List<Map<String, Object>> fragmentsData = new ArrayList<>();
-
-        Resource parent = resolver.getResource(parentPath);
-        if (parent == null) {
-            LOGGER.error("❌ Parent path not found: {}", parentPath);
-            return fragmentsData;
-        }
-
-        for (Resource cfRes : parent.getChildren()) {
-            ContentFragment cf = cfRes.adaptTo(ContentFragment.class);
-            if (cf == null) continue;
-
-            Map<String, Object> cfMap = new LinkedHashMap<>();
-            cfMap.put("cfName", cfRes.getName());
-
-            Map<String, String> fields = new LinkedHashMap<>();
-            Iterator<ContentElement> iterator = cf.getElements();
-            while (iterator.hasNext()) {
-                ContentElement element = iterator.next();
-                fields.put(element.getName(), element.getContent());
-            }
-
-            cfMap.put("fields", fields);
-            fragmentsData.add(cfMap);
-        }
-
-        LOGGER.info("📦 Found {} content fragments under {}", fragmentsData.size(), parentPath);
-        return fragmentsData;
+    /** ✅ Ensure non-null, trimmed string value */
+    private String safeCellValue(String value) {
+        return StringUtils.defaultString(value, "").trim();
     }
 
-    /** ✅ Sanitize CF name for JCR path safety */
+    /** ✅ Detect likely date values */
+    private boolean looksLikeDate(String val) {
+        return val.matches(".*\\d{2}/[A-Za-z]{3}/\\d{2}.*") || val.matches(".*\\d{2}:\\d{2}:\\d{2}.*");
+    }
+
+    /** ✅ Case-insensitive date parser for CF titles */
+    private String formatDateForName(String value) {
+        try {
+            DateTimeFormatter inputFmt = new DateTimeFormatterBuilder()
+                    .parseCaseInsensitive()
+                    .appendPattern("dd/MMM/yy hh:mm:ss.SSSSSSSSS a")
+                    .toFormatter(Locale.ENGLISH);
+
+            LocalDateTime dt = LocalDateTime.parse(value.trim(), inputFmt);
+
+            return dt.format(DateTimeFormatter.ofPattern("dd-MMM-yy-hh-mm-ss-a", Locale.ENGLISH)).toLowerCase();
+        } catch (Exception e) {
+            LOGGER.warn("Could not parse date '{}': {}", value, e.getMessage());
+            return value.trim().toLowerCase().replaceAll("[^a-z0-9\\-]", "-");
+        }
+    }
+
+    /** ✅ Sanitize CF name safely */
     private String sanitizeForJcr(String name) {
         if (name == null) return "";
         return name.trim().toLowerCase().replaceAll("[^a-z0-9\\-]", "-");
     }
 
-    /** ✅ Create or update CF */
+    /** ✅ Create CF from template if missing */
     public void createContentFragment(ResourceResolver resolver, String parentPath,
                                       List<String> headerList, String[] data, String modelType, String cfName) {
-
-        LOGGER.info("Creating content fragment: {}", cfName);
-
+        LOGGER.info("Creating CF: {}", cfName);
         try {
-            Resource templateResource = resolver.getResource("/conf/charger/settings/dam/cfm/models/" + modelType);
-            if (templateResource == null) {
+            Resource templateRes = resolver.getResource("/conf/charger/settings/dam/cfm/models/" + modelType);
+            if (templateRes == null) {
                 LOGGER.error("Template not found: {}", modelType);
                 return;
             }
 
-            FragmentTemplate fragmentTemplate = templateResource.adaptTo(FragmentTemplate.class);
-            if (fragmentTemplate == null) {
-                LOGGER.error("Failed to adapt template to FragmentTemplate: {}", modelType);
+            FragmentTemplate template = templateRes.adaptTo(FragmentTemplate.class);
+            if (template == null) {
+                LOGGER.error("Failed to adapt template: {}", modelType);
                 return;
             }
 
-            Resource existingCF = resolver.getResource(parentPath + "/" + cfName);
-            ContentFragment cf;
-
-            if (existingCF == null) {
-                Resource parentResource = resolver.getResource(parentPath);
-                if (parentResource == null) {
-                    LOGGER.error("Parent path does not exist: {}", parentPath);
-                    return;
-                }
-                cf = fragmentTemplate.createFragment(parentResource, cfName, cfName);
-                LOGGER.info("Created new content fragment: {}", cfName);
-            } else {
-                cf = existingCF.adaptTo(ContentFragment.class);
-                LOGGER.info("Using existing content fragment: {}", cfName);
+            Resource parentRes = resolver.getResource(parentPath);
+            if (parentRes == null) {
+                LOGGER.error("Parent path missing: {}", parentPath);
+                return;
             }
+
+            ContentFragment cf = template.createFragment(parentRes, cfName, cfName);
 
             if (cf != null) {
                 Iterator<ContentElement> elements = cf.getElements();
@@ -281,19 +270,16 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
                     for (int i = 0; i < headerList.size(); i++) {
                         String headerNormalized = headerList.get(i).replaceAll("[ _]", "").toLowerCase();
                         if (i < data.length && elementNormalized.equals(headerNormalized)) {
-                            element.setContent(data[i], element.getContentType());
-                            LOGGER.debug("Set content for element {} = {}", element.getName(), data[i]);
+                            element.setContent(safeCellValue(data[i]), element.getContentType());
+                            LOGGER.debug("Set element {} = {}", element.getName(), data[i]);
                             break;
                         }
                     }
                 }
-
             }
 
-        } catch (ContentFragmentException e) {
-            LOGGER.error("Error creating/updating content fragment", e);
         } catch (Exception e) {
-            LOGGER.error("Unexpected error in createContentFragment", e);
+            LOGGER.error("Error creating/updating CF", e);
         }
     }
 }
