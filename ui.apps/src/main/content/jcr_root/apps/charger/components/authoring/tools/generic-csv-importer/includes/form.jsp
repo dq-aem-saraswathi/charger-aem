@@ -302,7 +302,7 @@ async function handleExcelUpload() {
   }
 }
 
-/* ---------- Form Submit (Create CF) ---------- */
+
 /* ---------- Form Submit (Create CF) ---------- */
 async function handleSubmit(event) {
   event.preventDefault();
@@ -349,58 +349,64 @@ async function handleSubmit(event) {
 async function handleUpdate() {
   const form = document.getElementById("cfForm");
   if (!form.checkValidity()) {
-    showMessage("Please fill all required fields before updating.", "warning");
+    showMessage("⚠️ Please fill all required fields before updating.", "warning");
     return;
   }
 
-  const formData = new FormData(form);
-  formData.append("mode", "update");
+  // Step 1️⃣ — Ask confirmation *before* any request
+  showConfirmation(
+    "Are you sure you want to update or create Content Fragments based on this Excel?",
+    async () => {
+      // User confirmed — now perform the update
+      showSpinner();
 
-  try {
-    showSpinner(); // 🔄 Show spinner before fetch starts
+      const formData = new FormData(form);
+      formData.append("mode", "update");
 
-    const csrfToken = await getCsrfToken();
-    const url = Granite.HTTP.externalize("/bin/updateCFs");
+      try {
+        const csrfToken = await getCsrfToken();
+        const url = Granite.HTTP.externalize("/bin/updateCFs");
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "CSRF-Token": csrfToken },
-      body: formData,
-      credentials: "same-origin"
-    });
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "CSRF-Token": csrfToken },
+          body: formData,
+          credentials: "same-origin"
+        });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const result = await response.json();
-    console.log("Update result:", result);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const result = await response.json();
 
-    const created = Array.isArray(result.createFragments) ? result.createFragments : [];
-    const updated = Array.isArray(result.updatedFragments) ? result.updatedFragments : [];
-    const skipped = Array.isArray(result.skippedFragments) ? result.skippedFragments : [];
+        const created = Array.isArray(result.createFragments) ? result.createFragments : [];
+        const updated = Array.isArray(result.updatedFragments) ? result.updatedFragments : [];
+        const skipped = Array.isArray(result.skippedFragments) ? result.skippedFragments : [];
 
-    let summaryHtml = `<strong>Update Summary</strong><br><br>`;
-    summaryHtml += `<strong>Created content fragments:</strong><br>`;
-    summaryHtml += created.length ? created.join("<br>") + "<br><br>" : "None<br><br>";
+        let summaryHtml = `<strong>Update Summary</strong><br><br>`;
+        summaryHtml += `<strong>Created content fragments:</strong><br>`;
+        summaryHtml += created.length ? created.join("<br>") + "<br><br>" : "None<br><br>";
 
-    summaryHtml += `<strong>Updated content fragments:</strong><br>`;
-    summaryHtml += updated.length ? updated.join("<br>") + "<br><br>" : "None<br><br>";
+        summaryHtml += `<strong>Updated content fragments:</strong><br>`;
+        summaryHtml += updated.length ? updated.join("<br>") + "<br><br>" : "None<br><br>";
 
-    summaryHtml += `<strong>Skipped content fragments:</strong><br>`;
-    summaryHtml += skipped.length ? skipped.join("<br>") + "<br>" : "None<br>";
+        summaryHtml += `<strong>Skipped content fragments:</strong><br>`;
+        summaryHtml += skipped.length ? skipped.join("<br>") + "<br>" : "None<br>";
 
-    hideSpinner(); // ✅ Hide spinner when done
+        showMessage(summaryHtml, "success");
 
-    showConfirmation(
-      "Are you sure you want to update or create Content Fragments based on this Excel?",
-      () => showMessage(summaryHtml, "success"),
-      () => showMessage("Update cancelled by user.", "warning")
-    );
-
-  } catch (err) {
-    console.error("Error updating CFs:", err);
-    hideSpinner(); // ❌ Always hide on error
-    showMessage("Failed to update CFs. Check console for details.", "error");
-  }
+      } catch (err) {
+        console.error("Error updating CFs:", err);
+        showMessage("❌ Failed to update CFs. Check console for details.", "error");
+      } finally {
+        hideSpinner();
+      }
+    },
+    () => {
+      // User cancelled
+      showMessage("Update cancelled by user.", "warning");
+    }
+  );
 }
+
 
 
 document.getElementById("updateBtn").addEventListener("click", handleUpdate);

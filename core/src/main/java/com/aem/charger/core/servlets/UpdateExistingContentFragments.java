@@ -2,7 +2,7 @@ package com.aem.charger.core.servlets;
 
 import com.adobe.cq.dam.cfm.ContentElement;
 import com.adobe.cq.dam.cfm.ContentFragment;
-import com.adobe.cq.dam.cfm.ContentFragmentException;
+
 import com.adobe.cq.dam.cfm.FragmentTemplate;
 import com.aem.charger.core.services.ExcelModelCompareService;
 import com.google.gson.Gson;
@@ -26,9 +26,7 @@ import javax.servlet.Servlet;
 import javax.servlet.http.Part;
 import java.io.IOException;
 import java.io.InputStream;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeFormatterBuilder;
+
 import java.util.*;
 
 @Component(
@@ -130,6 +128,7 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
                         cfTitleValue = "row_" + dataRow.hashCode();
                     }
 
+                    cfTitleValue = cfTitleValue.replaceAll("\\.0$", "");
                     String cfName = sanitizeForJcr(cfTitleValue);
                     String cfPath = parentPath + "/" + cfName;
 
@@ -222,26 +221,11 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
 
     /** ✅ Case-insensitive date parser for CF titles */
     private String formatDateForName(String value) {
-        try {
-            DateTimeFormatter inputFmt = new DateTimeFormatterBuilder()
-                    .parseCaseInsensitive()
-                    .appendPattern("dd/MMM/yy hh:mm:ss.SSSSSSSSS a")
-                    .toFormatter(Locale.ENGLISH);
 
-            LocalDateTime dt = LocalDateTime.parse(value.trim(), inputFmt);
+            return value.replaceAll("[^a-zA-Z0-9_-]", "_");
 
-            return dt.format(DateTimeFormatter.ofPattern("dd-MMM-yy-hh-mm-ss-a", Locale.ENGLISH)).toLowerCase();
-        } catch (Exception e) {
-            LOGGER.warn("Could not parse date '{}': {}", value, e.getMessage());
-            return value.trim().toLowerCase().replaceAll("[^a-z0-9\\-]", "-");
-        }
     }
 
-    /** ✅ Sanitize CF name safely */
-    private String sanitizeForJcr(String name) {
-        if (name == null) return "";
-        return name.trim().toLowerCase().replaceAll("[^a-z0-9\\-]", "-");
-    }
 
     /** ✅ Create CF from template if missing */
     public void createContentFragment(ResourceResolver resolver, String parentPath,
@@ -289,5 +273,11 @@ public class UpdateExistingContentFragments extends SlingAllMethodsServlet {
             LOGGER.error("Error creating/updating CF", e);
         }
     }
+
+    private String sanitizeForJcr(String name) {
+        return name.replaceAll("[^a-zA-Z0-9_-]", "_");
+    }
+
+
 }
 

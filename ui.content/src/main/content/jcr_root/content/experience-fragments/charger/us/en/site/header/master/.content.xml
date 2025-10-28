@@ -29,6 +29,7 @@
                 jcr:primaryType="nt:unstructured"
                 sling:resourceType="charger/components/search"
                 searchRoot="/content/charger/us"/>
+            <logo/>
         </root>
     </jcr:content>
 </jcr:root>
